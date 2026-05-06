@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import joblib
 from sqlalchemy import create_engine
 
 # Konfigurasi Halaman Web
@@ -87,6 +88,9 @@ with tab1:
 # ==========================================
 # TAB 2: PREDIKSI TRAFIK
 # ==========================================
+# ==========================================
+# TAB 2: PREDIKSI TRAFIK (MENGGUNAKAN MODEL ML ASLI)
+# ==========================================
 with tab2:
     st.header("Prediksi Kondisi Lalu Lintas")
     col1, col2 = st.columns([1, 2])
@@ -95,29 +99,48 @@ with tab2:
         st.subheader("Input Parameter")
         junction = st.selectbox("Pilih Persimpangan (Junction)", [1, 2, 3, 4])
         hour = st.slider("Jam", 0, 23, 12)
-        day_of_week = st.selectbox("Hari", ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"])
+        day_of_week_str = st.selectbox("Hari", ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"])
+        
+        # Konversi hari ke angka (sesuai preprocessing model: 0=Senin, 6=Minggu)
+        days_mapping = {"Senin": 0, "Selasa": 1, "Rabu": 2, "Kamis": 3, "Jumat": 4, "Sabtu": 5, "Minggu": 6}
+        day_of_week_num = days_mapping[day_of_week_str]
         
         if st.button("Jalankan Prediksi", type="primary"):
             st.session_state.predict = True
     
     with col2:
         st.subheader("Hasil Prediksi")
-        # Simulasi prediksi sementara
-        base_traffic = 20
-        if 7 <= hour <= 9 or 16 <= hour <= 19:
-            base_traffic += 60
+        
+        try:
+            # 1. Load model yang sudah ditraining
+            model = joblib.load('traffic_model.pkl')
             
-        prediction = int(np.random.normal(loc=base_traffic + (junction*5), scale=10))
-        prediction = max(0, prediction)
-        
-        st.metric(label="Estimasi Jumlah Kendaraan", value=f"{prediction} Kendaraan")
-        
-        if prediction > 80:
-            st.error("⚠️ Kondisi: MACET BERAT")
-        elif prediction > 50:
-            st.warning("🟡 Kondisi: PADAT MERAYAP")
-        else:
-            st.success("✅ Kondisi: LANCAR")
+            # 2. Siapkan data input (harus sama urutannya dengan 'features' saat training)
+            # Yaitu: ['Junction', 'Hour', 'DayOfWeek']
+            input_data = pd.DataFrame({
+                'Junction': [junction],
+                'Hour': [hour],
+                'DayOfWeek': [day_of_week_num]
+            })
+            
+            # 3. Lakukan prediksi
+            prediction = model.predict(input_data)[0]
+            prediction = int(max(0, prediction)) # Pastikan tidak negatif
+            
+            st.metric(label="Estimasi Jumlah Kendaraan", value=f"{prediction} Kendaraan")
+            
+            # Kustomisasi status berdasarkan hasil prediksi (angka batas ini bisa kamu ubah)
+            if prediction > 80:
+                st.error("⚠️ Kondisi: MACET BERAT")
+            elif prediction > 50:
+                st.warning("🟡 Kondisi: PADAT MERAYAP")
+            else:
+                st.success("✅ Kondisi: LANCAR")
+                
+        except FileNotFoundError:
+            st.error("Error: File 'traffic_model.pkl' tidak ditemukan. Silakan jalankan 'train_model.py' terlebih dahulu.")
+        except Exception as e:
+            st.error(f"Terjadi kesalahan saat memprediksi: {e}")
 
 # ==========================================
 # TAB 3: CHAT AI (OLLAMA)
